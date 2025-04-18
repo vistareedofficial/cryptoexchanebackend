@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from pydantic import BaseModel, Field
+
 
 
 # Response model to return wallet details
@@ -36,3 +38,9 @@ class TransactionHistoryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class WithdrawalRequest(BaseModel):
+    user_id: int = Field(..., description="ID of the user initiating the withdrawal")
+    amount: float = Field(..., gt=0, description="Amount to withdraw")
+    destination_account_number: str = Field(..., description="Destination account number")

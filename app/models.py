@@ -94,26 +94,30 @@ class Driver(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     driver_photo = Column(String, nullable=True)
-    license_number = Column(String, unique=True, index=True, )
+    license_number = Column(String, unique=True, index=True)
     license_expiry = Column(Date, nullable=True)
     years_of_experience = Column(Integer, nullable=True)
-    vehicle_name = Column(String,  nullable=True)  
+    vehicle_name = Column(String, nullable=True)
     vehicle_model = Column(String, nullable=True)
-    vehicle_insurance_policy = Column(String,  nullable=True)  
-    vehicle_exterior_color = Column(String,  nullable=True)  
-    vehicle_interior_color = Column(String, nullable=True)  
-    referral_code = Column(String, unique=True, nullable=True)  
-    nin_photo = Column(String,  nullable=True)  
+    vehicle_insurance_policy = Column(String, nullable=True)
+    vehicle_exterior_color = Column(String, nullable=True)
+    vehicle_interior_color = Column(String, nullable=True)
+    referral_code = Column(String, unique=True, nullable=True)
+    nin_photo = Column(String, nullable=True)
     nin_number = Column(String, unique=True, nullable=True)
-    proof_of_ownership = Column(String, nullable=True)  
-    ssn_number = Column(String, nullable=True, unique=True) 
-    ssn_photo = Column(String, nullable=True) 
-    rating = Column(Float, default=100, nullable=True,)
+    proof_of_ownership = Column(String, nullable=True)
+    ssn_number = Column(String, nullable=True, unique=True)
+    ssn_photo = Column(String, nullable=True)
+    rating = Column(Float, default=100, nullable=True)
     vehicle_inspection_approval = Column(String, nullable=True)
-     # Coordinates for driver location
-    latitude = Column(Float, default=0.00, nullable=True)  
-    longitude = Column(Float, default=0.00, nullable=True)  
+
+    # Coordinates for driver location
+    latitude = Column(Float, default=0.00, nullable=True)
+    longitude = Column(Float, default=0.00, nullable=True)
     
+    # Online status
+    is_online = Column(Boolean, default=False)
+
     # Relationships
     vehicle = relationship("Vehicle", back_populates="driver", uselist=False)
     user = relationship("User", back_populates="driver")
@@ -160,17 +164,21 @@ class Ride(Base):
     panic_activated = Column(Boolean, default=False)  # Field to track panic button activation
     booking_for = Column(String, nullable=False, default='self')
 
-     # Coordinates for driver location
+    # Coordinates for driver location
     pickup_latitude = Column(Float, nullable=True)  
     pickup_longitude = Column(Float, nullable=True)  
     dropoff_latitude = Column(Float, nullable=True)  
     dropoff_longitude = Column(Float, nullable=True)  
 
+    # Different ride prices
+    vip_price = Column(Float, nullable=True)  
+    standard_price = Column(Float, nullable=True)  
+
     rider = relationship("Rider", back_populates="rides")
     driver = relationship("Driver", back_populates="rides")
     rating = relationship("Rating", uselist=False, back_populates="ride")
     messages = relationship("ChatMessage", back_populates="ride")
-    call_logs = relationship("CallLog", back_populates="ride")  
+    call_logs = relationship("CallLog", back_populates="ride")
 
 
 
@@ -261,33 +269,36 @@ class PaymentMethod(Base):
 
     rider = relationship("Rider", back_populates="payment_methods")
 
-# Wallet Model
 class Wallet(Base):
     __tablename__ = "wallets"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id'), unique=True)
-    balance = Column(Float, default=0.0)
-    account_number = Column(String, unique=True, nullable=False)  # Add this field
+    account_number = Column(String, unique=True, nullable=False)
 
-    
+    # Relationships
     user = relationship("User", back_populates="wallet")
     transactions = relationship("Transaction", back_populates="wallet")
+    coin_balances = relationship("WalletCoinBalance", back_populates="wallet", cascade="all, delete-orphan")
 
 
-# Transaction Model
 class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True, index=True)
     wallet_id = Column(Integer, ForeignKey('wallets.id'))
+    company_wallet_id = Column(Integer, ForeignKey("company_wallet.id"), nullable=True)
+    coin_id = Column(Integer, ForeignKey("coins.id"), nullable=False)  # Link to Coin
+
     amount = Column(Float)
     transaction_type = Column(SQLAEnum(WalletTransactionEnum, name='wallet_transaction_enum'))
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
+    # Relationships
     wallet = relationship("Wallet", back_populates="transactions")
     company_wallet = relationship("CompanyWallet", back_populates="transactions")
-    company_wallet_id = Column(Integer, ForeignKey("company_wallet.id"), nullable=True)
+    coin = relationship("Coin", back_populates="transactions")  # Two-way binding
+
 
 
 class ChatMessage(Base):
@@ -385,3 +396,33 @@ class DriverLocation(Base):
     driver_id = Column(Integer, primary_key=True, index=True)
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
+
+
+
+
+# Coin Model
+class Coin(Base):
+    __tablename__ = "coins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String, unique=True, index=True)  # e.g., BTC
+    name = Column(String, unique=True)                # e.g., Bitcoin
+    price_in_usd = Column(Float, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    balances = relationship("WalletCoinBalance", back_populates="coin_data")
+    transactions = relationship("Transaction", back_populates="coin")  # Backref for transactions
+
+
+# WalletCoinBalance Model
+class WalletCoinBalance(Base):
+    __tablename__ = "wallet_coin_balances"
+
+    id = Column(Integer, primary_key=True, index=True)
+    wallet_id = Column(Integer, ForeignKey("wallets.id"))
+    coin_id = Column(Integer, ForeignKey("coins.id"))
+    balance = Column(Float, default=0.0)
+
+    wallet = relationship("Wallet", back_populates="balances")
+    coin_data = relationship("Coin", back_populates="balances")
+

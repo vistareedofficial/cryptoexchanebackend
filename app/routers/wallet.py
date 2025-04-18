@@ -3,7 +3,7 @@ from ..database import get_async_db  # Ensure to update this to get the async se
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.models import Wallet, Transaction, CompanyWallet
-from ..utils.wallet_schema import  WalletResponse, TransactionCreate, TransactionResponse, TransactionHistoryResponse
+from ..utils.wallet_schema import  WalletResponse, TransactionCreate, TransactionResponse, TransactionHistoryResponse, WithdrawalRequest
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..utils.wallet_utilitity_functions import generate_global_unique_account_number
@@ -187,3 +187,60 @@ async def get_company_account_number(db: AsyncSession = Depends(get_async_db)):
             detail=f"An error occurred: {e}"
         )
     
+
+
+@router.post("/wallets/withdraw", response_model=TransactionResponse)
+async def withdraw_from_wallet(
+    withdrawal: WithdrawalRequest,
+    db: AsyncSession = Depends(get_async_db)
+):
+    # Get wallet of the user who is initiating the withdrawal
+    result = await db.execute(select(Wallet).filter(Wallet.user_id == withdrawal.user_id))
+    source_wallet = result.scalars().first()
+
+    if not source_wallet:
+        raise HTTPException(status_code=404, detail="User wallet not found")
+
+    if source_wallet.balance < withdrawal.amount:
+        raise HTTPException(status_code=400, detail="Insufficient balance")
+
+    # Deduct from user's wallet
+    source_wallet.balance -= withdrawal.amount
+    db.add(source_wallet)
+
+    # Create DEBIT transaction for user wallet
+    transaction = Transaction(
+        wallet_id=source_wallet.id,
+        amount=withdrawal.amount,
+        transaction_type="DEBIT"
+    )
+    db.add(transaction)
+
+    # Optional: If destination wallet exists in system, credit it
+    dest_result = await db.execute(
+        select(Wallet).filter(Wallet.account_number == withdrawal.destination_account_number)
+    )
+    destination_wallet = dest_result.scalars().first()
+
+    if destination_wallet:
+        destination_wallet.balance += withdrawal.amount
+        db.add(destination_wallet)
+
+        # Create CREDIT transaction for destination wallet
+        credit_transaction = Transaction(
+            wallet_id=destination_wallet.id,
+            amount=withdrawal.amount,
+            transaction_type="CREDIT"
+        )
+        db.add(credit_transaction)
+
+    await db.commit()
+    await db.refresh(transaction)
+
+    return TransactionResponse(
+        id=transaction.id,
+        amount=transaction.amount,
+        transaction_type=transaction.transaction_type,
+        created_at=transaction.created_at,
+        account_number=source_wallet.account_number
+    )
