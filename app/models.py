@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from .database import Base
 from sqlalchemy.sql.expression import text
-from .enums import UserType, UserStatusEnum, PaymentMethodEnum, RideStatusEnum, RideTypeEnum, WalletTransactionEnum, OTPTypeEnum, GenderEnum
+from .enums import UserType, UserStatusEnum, PaymentMethodEnum, RideStatusEnum, RideTypeEnum,TokenSymbol,  WalletTransactionEnum, OTPTypeEnum, GenderEnum
 from datetime import datetime, timedelta
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func  # Import func to use for timestamp
@@ -46,6 +46,31 @@ class User(Base):
     # Relationships for calls
     outgoing_calls = relationship("CallLog", foreign_keys="[CallLog.caller_id]", back_populates="caller")
     incoming_calls = relationship("CallLog", foreign_keys="[CallLog.receiver_id]",  back_populates="receiver")
+    crypto_user = relationship("CryptoUser", back_populates="user", uselist=False)
+    token_wallets = relationship("TokenWallet", back_populates="user")
+
+
+
+
+class CryptoUser(Base):
+    __tablename__ = "crypto_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+
+    # Additional fields only relevant to CryptoUser
+    wallet_address = Column(String, unique=True, nullable=True)
+    kyc_verified = Column(Boolean, default=False)
+    referral_code = Column(String, nullable=True)  # or False, if required
+    public_key = Column(String, unique=True, nullable=True)
+    secret_key = Column(String, nullable=True)  # store encrypted or securely
+
+    
+    # Relationship
+    user = relationship("User", back_populates="crypto_user")
+    wallet = relationship("Wallet", back_populates="crypto_user", uselist=False)
+    token_wallets = relationship("TokenWallet", back_populates="crypto_user")
+
 
 
 
@@ -275,8 +300,14 @@ class Wallet(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id'), unique=True)
     account_number = Column(String, unique=True, nullable=False)
+    balance = Column(Float, default=0.0)
+    currency = Column(String, default="USD")
+    crypto_user_id = Column(Integer, ForeignKey("crypto_users.id"))  # ✅ REQUIRED
+
+
 
     # Relationships
+    crypto_user = relationship("CryptoUser", back_populates="wallet")
     user = relationship("User", back_populates="wallet")
     transactions = relationship("Transaction", back_populates="wallet")
     coin_balances = relationship("WalletCoinBalance", back_populates="wallet", cascade="all, delete-orphan")
@@ -288,7 +319,11 @@ class Transaction(Base):
     id = Column(Integer, primary_key=True, index=True)
     wallet_id = Column(Integer, ForeignKey('wallets.id'))
     company_wallet_id = Column(Integer, ForeignKey("company_wallet.id"), nullable=True)
-    coin_id = Column(Integer, ForeignKey("coins.id"), nullable=False)  # Link to Coin
+    coin_id = Column(Integer, ForeignKey("coins.id"), nullable=True)  
+    token_wallet_id = Column(Integer, ForeignKey('token_wallets.id'), nullable=True)  # ✅ MUST EXIST
+    recipient_address = Column(String, nullable=True)  # <-- NEW
+
+
 
     amount = Column(Float)
     transaction_type = Column(SQLAEnum(WalletTransactionEnum, name='wallet_transaction_enum'))
@@ -298,6 +333,8 @@ class Transaction(Base):
     wallet = relationship("Wallet", back_populates="transactions")
     company_wallet = relationship("CompanyWallet", back_populates="transactions")
     coin = relationship("Coin", back_populates="transactions")  # Two-way binding
+    token_wallet = relationship("TokenWallet", back_populates="transactions")  # NEW
+
 
 
 
@@ -410,11 +447,10 @@ class Coin(Base):
     price_in_usd = Column(Float, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    balances = relationship("WalletCoinBalance", back_populates="coin_data")
-    transactions = relationship("Transaction", back_populates="coin")  # Backref for transactions
+    wallet_balances = relationship("WalletCoinBalance", back_populates="coin_data")  # fix here
+    transactions = relationship("Transaction", back_populates="coin")
 
 
-# WalletCoinBalance Model
 class WalletCoinBalance(Base):
     __tablename__ = "wallet_coin_balances"
 
@@ -423,6 +459,25 @@ class WalletCoinBalance(Base):
     coin_id = Column(Integer, ForeignKey("coins.id"))
     balance = Column(Float, default=0.0)
 
-    wallet = relationship("Wallet", back_populates="balances")
-    coin_data = relationship("Coin", back_populates="balances")
+    wallet = relationship("Wallet", back_populates="coin_balances")
+    coin_data = relationship("Coin", back_populates="wallet_balances")  # fix here
 
+
+
+class TokenWallet(Base):
+    __tablename__ = "token_wallets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    crypto_user_id = Column(Integer, ForeignKey("crypto_users.id"))
+    token_symbol = Column(String, nullable=False)
+    public_address = Column(String, nullable=False)
+    private_key_encrypted = Column(String, nullable=False)
+    contract_address = Column(String, nullable=True)
+    balance = Column(Float, default=0.0)  # Internal balance tracking
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="token_wallets")
+    crypto_user = relationship("CryptoUser", back_populates="token_wallets")
+    transactions = relationship("Transaction", back_populates="token_wallet")  # NEW

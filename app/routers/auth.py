@@ -9,10 +9,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import os
 import requests
-from ..utils.sendchampservices import Sendchamp
 from sqlalchemy.future import select
-from ..utils.otp import generate_otp, OTPVerification, generate_otp_expiration
-from ..utils.schemas_utils import OtpSMSRequest
 from ..utils.security import (
     create_access_token,
     create_refresh_token,
@@ -20,14 +17,15 @@ from ..utils.security import (
     decode_refresh_token
 )
 from sqlalchemy.orm import joinedload
-from ..utils.sendchamp_http_client import CUSTOM_HTTP_CLIENT
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
-from typing import Optional
 from app.database import get_async_db   # Replace 'app.database' with the correct path
 from fastapi.encoders import jsonable_encoder
 import logging
-
+from app.enums import UserType
+from mailchimp_marketing import Client
+from mailchimp_marketing.api_client import ApiClientError
+import mailchimp_transactional as MailchimpTransactional
 
 
 
@@ -40,11 +38,20 @@ load_dotenv()
 
 # Configure SendGrid API key
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-SENDGRID_EMAIL_SENDER = "Delevia <no-reply@delevia.com>"  # Use your verified SendGrid sender email
+SENDGRID_EMAIL_SENDER = "SannyCoin <no-reply@sannycoin.com>"  # Use your verified SendGrid sender email
 
 # Configue Sendchamp
 SENDCHAMP_API_URL = os.getenv("SENDCHAMP_API_URL")
 SENDCHAMP_PUBLIC_KEY = os.getenv("SENDCHAMP_PUBLIC_KEY")
+
+MAILCHIMP_API_KEY = os.getenv("MAILCHIMP_API_KEY")
+MAILCHIMP_SERVER_PREFIX = os.getenv("MAILCHIMP_SERVER_PREFIX")
+MAILCHIMP_LIST_ID = os.getenv("MAILCHIMP_LIST_ID")
+MAILCHIMP_TRANSACTIONAL_KEY = os.getenv("MAILCHIMP_TRANSACTIONAL_KEY")
+client = Client()
+client.set_config({
+    "api_key": MAILCHIMP_TRANSACTIONAL_KEY
+})
 
 router = APIRouter()
 
@@ -53,125 +60,63 @@ def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 
-# Rider Login Endpoint
-# Rider Login Endpoint
-@router.post("/login/rider/", status_code=status.HTTP_200_OK)
-async def login_rider(
+
+@router.post("/login/crypto-user/", status_code=status.HTTP_200_OK)
+async def login_crypto_user(
     login_data: LoginSchema,
     db: AsyncSession = Depends(get_async_db)
 ):
     async with db as session:
         result = await session.execute(
             select(User)
-            .options(joinedload(User.rider))  # Load the Rider relationship
+            .options(joinedload(User.crypto_user))
             .filter(User.phone_number == login_data.phone_number)
         )
         user = result.scalar()
 
-    # Check if the user exists
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Invalid phone number or password"
         )
-    
-    # Ensure the user type is Rider
-    if user.user_type != "RIDER":
+
+    # ✅ Ensure the user is a CRYPTOUSER
+    if user.user_type != UserType.CRYPTOUSER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Invalid phone number or password"
+            detail="Invalid phone number or password"
         )
 
-    # Validate password
     if not verify_password(login_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid phone number or password"
         )
 
-    # Get the Rider
-    rider = user.rider
-    if not rider:
+    crypto_user = user.crypto_user
+    if not crypto_user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="Rider not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="CryptoUser not found"
         )
 
-    # Generate tokens
-    access_token = create_access_token(data={"sub": str(rider.id)})
-    refresh_token = await create_refresh_token(data={"sub": str(user.id)}, db=db)  # Use user.id for refresh token
+    # ✅ Use user.id in access and refresh token
+    access_token = create_access_token(data={"sub": str(user.id)})
+    refresh_token = await create_refresh_token(data={"sub": str(user.id)}, db=db)
 
-    # Prepare user data
     user_data = jsonable_encoder(user)
     user_data.pop("hashed_password", None)
 
     return {
         "message": "Login Successful",
         "user_type": user.user_type,
-        "rider_id": rider.id,
+        "user_id": user.id,
+        "crypto_user_id": crypto_user.id,
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "user_data": user_data
     }
-
-# Driver Login Endpoint
-@router.post("/login/driver/", status_code=status.HTTP_200_OK)
-async def login_driver(
-    login_data: LoginSchema,
-    db: AsyncSession = Depends(get_async_db)
-):
-    async with db as session:
-        # Retrieve user
-        result = await session.execute(
-            select(User)
-            .options(joinedload(User.driver))  # Ensure driver is loaded
-            .filter(User.phone_number == login_data.phone_number)
-        )
-        user = result.scalar()
-
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Invalid phone number or password"
-            )
-
-        if user.user_type != "DRIVER":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid phone number or password"
-            )
-
-        if not verify_password(login_data.password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid phone number or password"
-            )
-
-        driver = user.driver
-        if not driver:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Driver not found"
-            )
-
-        # Create tokens using the user ID
-        access_token = create_access_token(data={"sub": str(driver.id)})
-        refresh_token = await create_refresh_token(data={"sub": str(user.id)}, db=db)  # Use user.id for refresh token
-
-        # Prepare user data
-        user_data = jsonable_encoder(user)
-        user_data.pop("hashed_password", None)
-
-        return {
-            "message": "Login Successful",
-            "user_type": user.user_type,
-            "driver_id": driver.id,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "user_data": user_data,
-        }
 
 
 # Refresh Token Endpoint to get new Access Token
@@ -257,7 +202,7 @@ async def send_otp_email(to_email: str, otp_code: str):
     <html>
         <body>
             <h3>Your OTP Code</h3>
-            <p>Your Delevia OTP code is <strong>{otp_code}</strong>. It expires in 5 minutes.</p>
+            <p>Your Vistareed OTP code is <strong>{otp_code}</strong>. It expires in 5 minutes.</p>
         </body>
     </html>
     """
@@ -290,7 +235,7 @@ async def send_otp_email(to_email: str, otp_code: str):
 async def send_otp_sms(phone_number: str, otp_code: str):
     sms_data = {
         "to": [phone_number],
-        "message": f"Your Delevia OTP code is {otp_code}. It expires in 5 minutes.",
+        "message": f"Your Vistareed OTP code is {otp_code}. It expires in 5 minutes.",
         "sender_name": "Sendchamp",
         "route": "dnd"
     }
@@ -339,3 +284,69 @@ async def verify_password_reset_otp(
             )
 
     return {"message": "OTP verified successfully. You may now reset your password."}
+
+
+
+
+@router.post("/send-mailchimp-otp-email")
+async def send_otp_email(to_email: str, otp_code: str):
+    if not MAILCHIMP_API_KEY:
+        raise HTTPException(status_code=500, detail="Mailchimp API key not configured")
+
+    try:
+        # Initialize Mailchimp Transactional (Mandrill) client
+        client = MailchimpTransactional.Client(MAILCHIMP_API_KEY)
+
+        # Construct the message payload
+        message = {
+            "from_email": "no-reply@vistareed.com",
+            "subject": "Your OTP Code for Verification",
+            "html": f"""
+                <html>
+                    <body>
+                        <h3>Your OTP Code</h3>
+                        <p>Your Vistareed OTP code is <strong>{otp_code}</strong>. It expires in 5 minutes.</p>
+                    </body>
+                </html>
+            """,
+            "to": [{"email": to_email, "type": "to"}]
+        }
+
+        # Send the message
+        response = client.messages.send({"message": message})
+
+        # Check for success in response
+        if not response or response[0].get("status") not in ["sent", "queued", "scheduled"]:
+            raise HTTPException(status_code=400, detail="Failed to send OTP email")
+
+        return {"message": "OTP sent successfully via email", "mailchimp_response": response}
+
+    except ApiClientError as e:
+        print("Mailchimp Error:", str(e))
+        raise HTTPException(status_code=500, detail="An error occurred while sending the OTP email")
+    
+
+
+
+
+
+@router.post("/auth/send-mailchimp-otp-email")
+async def send_otp_email(to_email: str, otp_code: str):
+    if not MAILCHIMP_TRANSACTIONAL_KEY:
+        raise HTTPException(status_code=500, detail="Mailchimp API key not set")
+
+    client = Client(MAILCHIMP_TRANSACTIONAL_KEY)
+
+    message = {
+        "from_email": "no-reply@vistareed.com",  # required
+        "subject": "Your OTP Code",
+        "html": f"<p>Your Vistareed OTP code is <strong>{otp_code}</strong></p>",
+        "to": [{"email": to_email, "type": "to"}],
+    }
+
+    try:
+        response = client.messages.send({"message": message})
+        return {"message": "OTP email sent successfully", "response": response}
+    except Exception as e:
+        print("Mailchimp Error:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to send OTP email")

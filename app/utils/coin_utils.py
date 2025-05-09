@@ -1,114 +1,115 @@
-import requests
+import asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from models import Wallet, Transaction, WalletCoinBalance, Coin
-from enums import WalletTransactionEnum  # Assuming you defined this Enum
+from app.models import  Coin, User, WalletCoinBalance
+import httpx
+from datetime import datetime
+import uuid
+from tronpy.keys import PrivateKey
+from cryptography.fernet import Fernet
+import os
+from sqlalchemy.orm import selectinload
+
 
 # ------------------- DEPOSIT -------------------
 
-async def deposit_to_wallet(db: AsyncSession, wallet_id: int, coin_symbol: str, amount: float):
-    result = await db.execute(select(Coin).where(Coin.symbol == coin_symbol))
-    coin = result.scalars().first()
-    if not coin:
-        raise HTTPException(status_code=404, detail="Coin not found")
 
-    result = await db.execute(select(Wallet).where(Wallet.id == wallet_id))
-    wallet = result.scalars().first()
-    if not wallet:
-        raise HTTPException(status_code=404, detail="Wallet not found")
+FERNET_SECRET_KEY = os.getenv("FERNET_SECRET_KEY")
 
-    result = await db.execute(
-        select(WalletCoinBalance).where(
-            WalletCoinBalance.wallet_id == wallet_id,
-            WalletCoinBalance.coin_id == coin.id
-        )
-    )
-    wallet_balance = result.scalars().first()
-
-    if wallet_balance:
-        wallet_balance.balance += amount
-    else:
-        wallet_balance = WalletCoinBalance(wallet_id=wallet_id, coin_id=coin.id, balance=amount)
-        db.add(wallet_balance)
-
-    transaction = Transaction(
-        wallet_id=wallet_id,
-        amount=amount,
-        transaction_type=WalletTransactionEnum.DEPOSIT,
-        coin_id=coin.id
-    )
-    db.add(transaction)
-    await db.commit()
-    await db.refresh(transaction)
-
-    return {"message": "Deposit successful", "transaction_id": transaction.id}
-
-# ------------------- WITHDRAW -------------------
-
-async def withdraw_from_wallet(db: AsyncSession, wallet_id: int, coin_symbol: str, amount: float):
-    result = await db.execute(select(Coin).where(Coin.symbol == coin_symbol))
-    coin = result.scalars().first()
-    if not coin:
-        raise HTTPException(status_code=404, detail="Coin not found")
-
-    result = await db.execute(select(Wallet).where(Wallet.id == wallet_id))
-    wallet = result.scalars().first()
-    if not wallet:
-        raise HTTPException(status_code=404, detail="Wallet not found")
-
-    result = await db.execute(
-        select(WalletCoinBalance).where(
-            WalletCoinBalance.wallet_id == wallet_id,
-            WalletCoinBalance.coin_id == coin.id
-        )
-    )
-    wallet_balance = result.scalars().first()
-
-    if not wallet_balance or wallet_balance.balance < amount:
-        raise HTTPException(status_code=400, detail="Insufficient balance")
-
-    wallet_balance.balance -= amount
-
-    transaction = Transaction(
-        wallet_id=wallet_id,
-        amount=amount,
-        transaction_type=WalletTransactionEnum.WITHDRAWAL,
-        coin_id=coin.id
-    )
-    db.add(transaction)
-    await db.commit()
-    await db.refresh(transaction)
-
-    return {"message": "Withdrawal successful", "transaction_id": transaction.id}
+FERNET_KEY = FERNET_SECRET_KEY
+fernet = Fernet(FERNET_KEY)
 
 # ------------------- UPDATE COIN PRICES -------------------
 
-async def fetch_coin_prices(db: AsyncSession):
-    url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,binancecoin,sannycoin&vs_currencies=usd"
-    response = requests.get(url)
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=500, detail="Failed to fetch coin prices")
-
-    coin_prices = response.json()
-
-    # Mapping from CoinGecko name to your system's symbol
-    cg_to_symbol = {
-        "bitcoin": "BTC",
-        "ethereum": "ETH",
-        "tether": "USDT",
-        "binancecoin": "BNB",
-        "sannycoin": "SNY"
+async def fetch_price_from_coingecko(symbol: str):
+    symbol_map = {
+        "BTC": "bitcoin",
+        "ETH": "ethereum",
+        "USDT": "tether",
+        "BNB": "binancecoin"
     }
+    
+    coin_id = symbol_map.get(symbol.upper())
+    if not coin_id:
+        return None
 
-    for cg_name, symbol in cg_to_symbol.items():
-        price = coin_prices.get(cg_name, {}).get("usd")
-        if price is not None:
-            result = await db.execute(select(Coin).where(Coin.symbol == symbol))
-            coin = result.scalars().first()
-            if coin:
-                coin.price_in_usd = price
-                db.add(coin)
+    url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd"
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            return data[coin_id]["usd"]
+    except Exception as e:
+        print(f"Error fetching {symbol} price: {e}")
+        return None
+
+
+async def update_coin_prices(db: AsyncSession):
+    result = await db.execute(select(Coin))
+    coins = result.scalars().all()
+
+    for coin in coins:
+        price = await fetch_price_from_coingecko(coin.symbol)
+        if price is not None and price != coin.price_in_usd:
+            coin.price_in_usd = price
+            coin.updated_at = datetime.utcnow()
+            db.add(coin)  # Important to mark it dirty
 
     await db.commit()
+    print("✅ Coin prices updated!")
+
+
+async def background_price_updater(get_db):
+    while True:
+        try:
+            db_gen = get_db()
+            db = await anext(db_gen)
+            try:
+                await update_coin_prices(db)
+            finally:
+                await db_gen.aclose()
+        except Exception as e:
+            print(f"Error in background updater: {e}")
+
+        await asyncio.sleep(300)  # wait 5 minutes
+
+
+
+async def create_crypto_wallet(user_id: int) -> str:
+    # Simulate wallet creation — replace with actual blockchain logic
+    return f"0x{uuid.uuid4().hex[:40]}"
+
+
+def encrypt_private_key(private_key: str) -> str:
+    return fernet.encrypt(private_key.encode()).decode()
+
+def generate_tron_wallet():
+    private_key = PrivateKey.random()
+    public_key = private_key.public_key.hex()
+    wallet_address = private_key.public_key.to_base58check_address()
+    secret_key = private_key.hex()
+
+    return {
+        "wallet_address": wallet_address,
+        "public_key": public_key,
+        "secret_key": secret_key,
+        "encrypted_private_key": encrypt_private_key(secret_key)
+    }
+
+
+def get_crypto_user_usdt_balance(user_id: int, db: AsyncSession):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or not user.wallet:
+        return {"balance_in_usdt": 0.0}
+
+    total_balance = 0.0
+    for coin_balance in user.wallet.coin_balances:
+        coin = coin_balance.coin_data
+        if coin:
+            total_balance += coin_balance.balance * coin.price_in_usd
+    
+    return {"balance_in_usdt": round(total_balance, 2)}
+

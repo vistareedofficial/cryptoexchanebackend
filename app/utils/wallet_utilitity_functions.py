@@ -2,6 +2,8 @@ import random
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from .. models import Wallet, CompanyWallet
+from fastapi import HTTPException
+
 
 async def generate_global_unique_account_number(db: AsyncSession):
     while True:
@@ -19,3 +21,12 @@ async def generate_global_unique_account_number(db: AsyncSession):
 
         if not wallet_exists and not company_wallet_exists:
             return account_number
+        
+
+# Helper function to get wallet by user_id
+async def get_wallet_by_user(user_id: int, db: AsyncSession):
+    result = await db.execute(select(Wallet).where(Wallet.user_id == user_id))
+    wallet = result.scalar_one_or_none()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet not found")
+    return wallet

@@ -3,6 +3,7 @@ from enum import Enum
 class UserType(str, Enum):
     RIDER = "RIDER"
     DRIVER = "DRIVER"
+    CRYPTOUSER = "CRYPTOUSER"
 
 
 class UserStatusEnum(str, Enum):
@@ -35,12 +36,15 @@ class RideTypeEnum(str, Enum):
 class RidePaymentStatus(str, Enum):
     PENDING = "PENDING"
     PAID = "PAID"
+    COMPLETED = "COMPLETED"
 
 
 class WalletTransactionEnum(str, Enum):
     CREDIT = 'CREDIT'
     DEBIT = 'DEBIT' 
     REFERRAL_BONUS = 'REFERRALBONUS'
+    DEPOSIT = "DEPOSIT"
+    WITHDRAWAL = "WITHDRAWAL" 
 
 
 class OTPTypeEnum(str, Enum):
@@ -52,3 +56,14 @@ class OTPTypeEnum(str, Enum):
 class GenderEnum(str, Enum):
     Male = "Male"
     Female = "Female"
+
+
+
+class TokenSymbol(str, Enum):
+    TRX = "TRX"
+    USDT = "USDT"
+    USDC = "USDC"
+    BTC = "BTC"
+    ETH = "ETH"
+
+

@@ -5,13 +5,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import delete
 import json
+import asyncio
+from app.database import async_session  # wherever your session is
+from app.seed_coins import seed_coins
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
-from app.utils.rides_schemas import RideResponse
+from app.utils.coin_utils import background_price_updater
 from app.enums import RideStatusEnum
 import logging
-from app.routers import auth, users, rides, wallet, chatMessage, pushNotifications,coordinates
+from app.routers import auth, users, rides, wallet, chatMessage, pushNotifications,coordinates, coins
 from app.database import Base, async_engine, get_async_db
 from app.models import Ride, ChatMessage, CallLog, OTPVerification
 from app.utils.connection_manager import ConnectionManager, CallConnectionManager, driver_connection_manager
@@ -29,19 +32,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
-app = FastAPI()
+# app = FastAPI()
 
 
-# router = APIRouter()
-
-# Add CORS Middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Adjust this to your specific frontend origin
-    allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
-)
 
 # WebSocket Connection Manager
 manager = ConnectionManager()
@@ -60,6 +53,7 @@ AsyncSessionLocal = sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False
 )
+
 
 async def delete_expired_otps():
     """
@@ -91,6 +85,7 @@ async def delete_expired_otps():
             logger.error(f"❌ Error deleting expired OTPs: {e}")
             await session.rollback()  # Rollback in case of error
 
+# The lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -99,6 +94,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting FastAPI application...")
 
     try:
+        # Starting OTP cleanup scheduler
         logger.info("🔄 Starting scheduler for OTP cleanup...")
 
         # Schedule the OTP cleanup task to run every 2 minutes
@@ -113,26 +109,42 @@ async def lifespan(app: FastAPI):
         # Start the scheduler
         scheduler.start()
         logger.info("✅ OTP cleanup task scheduled and scheduler started.")
+        
+        # Starting background price updater task
+        logger.info("🔄 Starting background price updater...")
+        task = asyncio.create_task(background_price_updater(get_async_db))
+
+        logger.info("✅ Background price updater task started.")
     
     except Exception as e:
-        logger.error(f"❌ Error starting scheduler: {e}")
+        logger.error(f"❌ Error starting background tasks: {e}")
 
     yield  # App runs while this is active
 
     # Shutdown logic
     try:
-        logger.info("🛑 Shutting down scheduler...")
-
+        # Stopping OTP cleanup scheduler
+        logger.info("🛑 Shutting down OTP cleanup scheduler...")
         if scheduler.running:
             scheduler.shutdown()
-            logger.info("✅ Scheduler stopped successfully.")
+            logger.info("✅ OTP cleanup scheduler stopped successfully.")
         else:
-            logger.warning("⚠️ Scheduler was not running.")
+            logger.warning("⚠️ OTP cleanup scheduler was not running.")
+
+        # Cancelling background price updater task
+        logger.info("🛑 Cancelling background price updater task...")
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        logger.info("✅ Background price updater task stopped.")
 
     except Exception as e:
-        logger.error(f"❌ Error stopping scheduler: {e}")
+        logger.error(f"❌ Error during shutdown: {e}")
 
     logger.info("🚀 FastAPI application shutdown complete.")
+
 
 # Create FastAPI app with lifespan context
 app = FastAPI(lifespan=lifespan)
@@ -332,13 +344,31 @@ async def driver_ws(websocket: WebSocket, driver_id: int, db: AsyncSession = Dep
     # 👇 Delegate all logic to the manager
     await driver_connection_manager.connect(driver_id, websocket, db)
 
+
+@app.on_event("startup")
+async def start_background_tasks():
+    asyncio.create_task(background_price_updater(get_async_db))
+
+
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",  # Add both forms just in case
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Use ["*"] for testing only
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Include routers
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
-app.include_router(rides.router, prefix="/rides", tags=["Rides"])
 app.include_router(wallet.router, prefix="/wallet", tags=["Wallet"])
 app.include_router(chatMessage.router, prefix="/chatMessage", tags=["ChatMessage"])
 app.include_router(pushNotifications.router, prefix="/pushNotifications", tags=["pushNotifications"])
-app.include_router(coordinates.router, prefix="/coordinates", tags=["coordinates"])
+app.include_router(coins.router, prefix="/coins", tags=["coins"])
 
 
