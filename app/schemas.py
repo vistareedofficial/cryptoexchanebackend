@@ -137,4 +137,4 @@ def create_user(db: Session, user: UserBase):
 # LogoutRequest Schema
 class LogoutRequest(BaseModel):
     refresh_token: str
-    access_token: str | None = None  # Make access_token optional
+    access_token: Optional[str] = None
