@@ -35,6 +35,17 @@ logger = logging.getLogger(__name__)
 # app = FastAPI()
 
 
+# Logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("app.log"),
+        logging.StreamHandler()
+    ]
+)
+
+
 
 # WebSocket Connection Manager
 manager = ConnectionManager()
