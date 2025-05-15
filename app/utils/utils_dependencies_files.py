@@ -54,3 +54,15 @@ def generate_hashed_referral_code():
     hash_object = hashlib.sha256(new_uuid.bytes)
     # Get the first 8 characters of the hex digest
     return hash_object.hexdigest()[:10]
+
+
+
+
+# utils/compat.py or top of your file
+async def anext(aiter, default=...):
+    try:
+        return await aiter.__anext__()
+    except StopAsyncIteration:
+        if default is ...:
+            raise
+        return default

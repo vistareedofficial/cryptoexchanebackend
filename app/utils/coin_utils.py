@@ -1,18 +1,15 @@
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.models import  Coin, User, WalletCoinBalance
+from app.models import  Coin, User
 import httpx
 from datetime import datetime
 import uuid
 from tronpy.keys import PrivateKey
 from cryptography.fernet import Fernet
 import os
-from sqlalchemy.orm import selectinload
-
-
+from .utils_dependencies_files import anext
 # ------------------- DEPOSIT -------------------
 
 
