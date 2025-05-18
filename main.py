@@ -363,7 +363,9 @@ async def start_background_tasks():
 
 origins = [
     "http://localhost:3000",
-    "http://127.0.0.1:3000",  # Add both forms just in case
+    "http://127.0.0.1:3000",
+    "http://76.76.21.21",  # Allow direct IP access over HTTP
+    "https://76.76.21.21", # If served over HTTPS (which Vercel usually does)
 ]
 
 app.add_middleware(

@@ -110,13 +110,13 @@ async def pre_register_crypto_user(
         expiration_time = generate_otp_expiration()
 
         # Send OTP
-        # async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
-        #     email_response = await client.post(
-        #         "/auth/send-otp-email",
-        #         params={"to_email": email, "otp_code": otp_code}
-        #     )
-        #     if email_response.status_code != 200:
-        #         raise HTTPException(status_code=500, detail="Failed to send OTP email.")
+        async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
+            email_response = await client.post(
+                "/auth/brevo-send-otp-email",
+                params={"to_email": email, "otp_code": otp_code}
+            )
+            if email_response.status_code != 200:
+                raise HTTPException(status_code=500, detail="Failed to send OTP email.")
 
         # Save OTP data
         otp_entry = OTPVerification(

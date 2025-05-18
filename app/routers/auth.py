@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Form
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_async_db  # Ensure to update this to get the async session
 from ..schemas import LoginSchema
@@ -39,6 +40,9 @@ load_dotenv()
 # Configure SendGrid API key
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 SENDGRID_EMAIL_SENDER = "SannyCoin <no-reply@sannycoin.com>"  # Use your verified SendGrid sender email
+
+SENDCHAMP_EMAIL_SENDER = "noreply@vistareed.com"
+SENDCHAMP_API_KEY = os.getenv("SENDCHAMP_API_KEY")
 
 # Configue Sendchamp
 SENDCHAMP_API_URL = os.getenv("SENDCHAMP_API_URL")
@@ -231,7 +235,7 @@ async def send_otp_email(to_email: str, otp_code: str):
 
 
 # SEndchamp OTP Sms
-@router.post("/send-otp/v1/messaging/send_sms")
+@router.post("/sendchamp-otp/v1/messaging/send_sms")
 async def send_otp_sms(phone_number: str, otp_code: str):
     sms_data = {
         "to": [phone_number],
@@ -350,3 +354,92 @@ async def send_otp_email(to_email: str, otp_code: str):
     except Exception as e:
         print("Mailchimp Error:", str(e))
         raise HTTPException(status_code=500, detail="Failed to send OTP email")
+    
+
+
+@router.post("/sendchamp-send-otp-email")
+async def sendchamp_otp_email(to_email: str, otp_code: str):
+    try:
+        headers = {
+            "Authorization": "Bearer sendchamp_live_$2a$10$DZttgoMRZNPXJ7teQfIQa.NkvSKCYx28Pl16HOxxl6u7cTDkPbYZm",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+
+        data = {
+            "to": [
+                {"email": to_email}
+            ],
+            "sender": "noreply@vistareed.com",  # Replace with your verified sender name
+            "subject": "Your OTP Code",
+            "message_body": {
+                "type": "text",
+                "value": f"Your OTP code is {otp_code}"
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post("https://api.sendchamp.com/api/v1/email/send", headers=headers, json=data)
+
+        if response.status_code not in (200, 201):
+            return {
+                "error": "Failed to send OTP",
+                "status": response.status_code,
+                "response": response.text
+            }
+
+        return {"message": "OTP sent successfully"}
+
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
+
+
+
+@router.post("/brevo-send-otp-email")
+async def brevo_send_otp_email(to_email: str, otp_code: str):
+    try:
+        headers = {
+            "accept": "application/json",
+            "api-key": "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",
+            "content-type": "application/json"
+        }
+
+        data = {
+            "sender": {
+                "name": "Vistareed",
+                "email": "no-reply@vistareed.com"  # Must be your verified Brevo sender
+            },
+            "to": [
+                {
+                    "email": to_email,
+                    "name": to_email.split("@")[0]  # Use part of email as fallback name
+                }
+            ],
+            "subject": "Your OTP Code",
+            "htmlContent": f"""
+                <html>
+                    <body>
+                        <p>Hello,</p>
+                        <p>Your OTP code is <strong>{otp_code}</strong>.</p>
+                        <p>This code will expire in 5 minutes.</p>
+                        <br>
+                        <p>Best regards,<br>Vistareed</p>
+                    </body>
+                </html>
+            """
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post("https://api.brevo.com/v3/smtp/email", headers=headers, json=data)
+
+        if response.status_code not in (200, 201):
+            return {
+                "error": "Failed to send OTP",
+                "status": response.status_code,
+                "response": response.text
+            }
+
+        return {"message": "OTP sent successfully via Brevo"}
+
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
