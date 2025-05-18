@@ -39,7 +39,7 @@ load_dotenv()
 
 # Configure SendGrid API key
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-SENDGRID_EMAIL_SENDER = "SannyCoin <no-reply@sannycoin.com>"  # Use your verified SendGrid sender email
+SENDGRID_EMAIL_SENDER = "Vistareed <no-reply@vistareed.com>"  # Use your verified SendGrid sender email
 
 SENDCHAMP_EMAIL_SENDER = "noreply@vistareed.com"
 SENDCHAMP_API_KEY = os.getenv("SENDCHAMP_API_KEY")
