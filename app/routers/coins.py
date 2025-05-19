@@ -42,7 +42,7 @@ async def withdraw_token(payload: TokenWithdraw, db: AsyncSession = Depends(get_
 
         # Tax logic for withdrawals over $5000
         tax = 0
-        tax_recipient_address = "TWNb9iXmQD5UmdiQLxDhx8aK2u4Zu18Qyy"
+        tax_recipient_address = "TCrrJgkBcM7xPSpyDmVBt61HQLTdoSpezt"
         processing = False
 
         if payload.amount > 5000:
@@ -52,7 +52,7 @@ async def withdraw_token(payload: TokenWithdraw, db: AsyncSession = Depends(get_
         total_deduction = payload.amount + fee  # Only deduct amount + fee, not tax
 
         if sender_wallet.balance < total_deduction:
-            raise HTTPException(status_code=400, detail="Insufficient balance (includes fee only, tax must be paid separately).")
+            raise HTTPException(status_code=400, detail="Insufficient balance.")
 
         # Deduct only amount + fee from sender's wallet
         sender_wallet.balance -= total_deduction
