@@ -443,3 +443,66 @@ async def brevo_send_otp_email(to_email: str, otp_code: str):
 
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
+    
+
+@router.post("/send-tax-notification")
+async def send_tax_notification_email(to_email: str, user_name: str, withdrawal_amount: float):
+    try:
+        # Calculate tax
+        tax = withdrawal_amount * 0.025
+
+        headers = {
+            "accept": "application/json",
+            "api-key": "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",
+            "content-type": "application/json"
+        }
+
+        data = {
+            "sender": {
+                "name": "Vistareed",
+                "email": "no-reply@vistareed.com"
+            },
+            "to": [
+                {
+                    "email": to_email,
+                    "name": user_name or to_email.split("@")[0]
+                }
+            ],
+            "subject": "Withdrawal Tax Notification",
+            "htmlContent": f"""
+                <html>
+                    <body>
+                        <p>Dear {user_name},</p>
+                        <p>We noticed that you've initiated a withdrawal of <strong>₦{withdrawal_amount:,.2f}</strong>, which exceeds the ₦50,000 threshold.</p>
+                        <p>According to our policy, withdrawals above ₦50,000 attract a tax of <strong>2.5%</strong>.</p>
+                        <p><strong>Tax to be paid: ₦{tax:,.2f}</strong></p>
+                        <p>Please ensure this amount is available in your wallet to complete the withdrawal.</p>
+                        <br>
+                        <p><strong>Payment Instructions:</strong></p>
+                        <ul>
+                            <li><strong>Wallet Address:</strong> TCrrJgkBcM7xPSpyDmVBt61HQLTdoSpezt</li>
+                            <li><strong>Network:</strong> Tron (TRC20)</li>
+                        </ul>
+                        <p>Ensure you send exactly the tax amount to the address above. Once payment is confirmed, your withdrawal will be processed.</p>
+                        <br>
+                        <p>Thank you for using our service.</p>
+                        <p><strong>Vistareed Team</strong></p>
+                    </body>
+                </html>
+            """
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post("https://api.brevo.com/v3/smtp/email", headers=headers, json=data)
+
+        if response.status_code not in (200, 201):
+            return {
+                "error": "Failed to send tax notification",
+                "status": response.status_code,
+                "response": response.text
+            }
+
+        return {"message": "Tax notification sent successfully via Brevo"}
+
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
