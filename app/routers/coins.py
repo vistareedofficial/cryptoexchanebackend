@@ -45,8 +45,8 @@ async def withdraw_token(payload: TokenWithdraw, db: AsyncSession = Depends(get_
         tax_recipient_address = "TCrrJgkBcM7xPSpyDmVBt61HQLTdoSpezt"
         processing = False
 
-        if payload.amount > 5000:
-            tax = payload.amount * 0.05  # 5% tax
+        if payload.amount > 50000:
+            tax = payload.amount * 0.025  # 5% tax
             processing = True
 
         total_deduction = payload.amount + fee  # Only deduct amount + fee, not tax
