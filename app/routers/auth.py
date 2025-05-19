@@ -444,9 +444,8 @@ async def brevo_send_otp_email(to_email: str, otp_code: str):
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
     
-
 @router.post("/send-tax-notification")
-async def send_tax_notification_email(to_email: str, user_name: str, withdrawal_amount: float):
+async def send_tax_notification_email(to_email: str, full_name: str, withdrawal_amount: float):
     try:
         # Calculate tax
         tax = withdrawal_amount * 0.025
@@ -465,28 +464,30 @@ async def send_tax_notification_email(to_email: str, user_name: str, withdrawal_
             "to": [
                 {
                     "email": to_email,
-                    "name": user_name or to_email.split("@")[0]
+                    "name": full_name or to_email.split("@")[0]
                 }
             ],
-            "subject": "Withdrawal Tax Notification",
+            "subject": "Action Required: Pay Tax Before Withdrawal Can Be Credited",
             "htmlContent": f"""
                 <html>
                     <body>
-                        <p>Dear {user_name},</p>
-                        <p>We noticed that you've initiated a withdrawal of <strong>₦{withdrawal_amount:,.2f}</strong>, which exceeds the ₦50,000 threshold.</p>
-                        <p>According to our policy, withdrawals above ₦50,000 attract a tax of <strong>2.5%</strong>.</p>
-                        <p><strong>Tax to be paid: ₦{tax:,.2f}</strong></p>
-                        <p>Please ensure this amount is available in your wallet to complete the withdrawal.</p>
+                        <p>Dear {full_name},</p>
+                        <p>We noticed that you've initiated a withdrawal of <strong>USDT {withdrawal_amount:,.2f}</strong>, which exceeds the USDT50,000 threshold.</p>
+                        <p>As per our policy, withdrawals above USDT50,000 are subject to a <strong>2.5% tax</strong>.</p>
+                        <p><strong>Tax amount due: USDT {tax:,.2f}</strong></p>
+                        <p><strong>Important:</strong> Your withdrawal will <u>not</u> be credited to your account until the required tax has been successfully paid.</p>
                         <br>
-                        <p><strong>Payment Instructions:</strong></p>
+                        <p><strong>Tax Payment Instructions:</strong></p>
                         <ul>
                             <li><strong>Wallet Address:</strong> TCrrJgkBcM7xPSpyDmVBt61HQLTdoSpezt</li>
                             <li><strong>Network:</strong> Tron (TRC20)</li>
+                            <li><strong>Amount to Pay:</strong> USDT {tax:,.2f}</li>
                         </ul>
-                        <p>Ensure you send exactly the tax amount to the address above. Once payment is confirmed, your withdrawal will be processed.</p>
+                        <p>Please ensure you send exactly the tax amount to the wallet address above.</p>
+                        <p>Once your tax payment is confirmed, your withdrawal will be processed and credited without delay.</p>
                         <br>
-                        <p>Thank you for using our service.</p>
-                        <p><strong>Vistareed Team</strong></p>
+                        <p>Thank you for choosing Vistareed.</p>
+                        <p><strong>The Vistareed Team</strong></p>
                     </body>
                 </html>
             """
