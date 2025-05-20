@@ -4,6 +4,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import or_
+from sqlalchemy import and_
 from datetime import datetime
 from ..database import get_async_db
 from ..models import User, Rider,CryptoUser, Driver, KYC, Admin, Wallet, Referral, PasswordReset, TemporaryUserPhoto, PanicButton
@@ -349,25 +350,41 @@ async def get_referral_code(rider_id: int, db: AsyncSession = Depends(get_async_
     }
 
 
-
 @router.post("/password-reset/request", status_code=status.HTTP_200_OK)
 async def request_password_reset(
-    email: str = Form(...),  # Form data for email
+    email: str = Form(...),
     db: AsyncSession = Depends(get_async_db)
 ):
-    # Check if the user exists
     async with db as session:
+        # Check if the user exists
         user_query = await session.execute(select(User).where(User.email == email))
         user = user_query.scalar()
 
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
-        # Generate OTP and expiration time
+        # Check if there's already a valid, unused, and unexpired OTP
+        existing_otp_query = await session.execute(
+            select(PasswordReset).where(
+                and_(
+                    PasswordReset.user_id == user.id,
+                    PasswordReset.used == False,
+                    PasswordReset.expires_at > datetime.utcnow()
+                )
+            )
+        )
+        existing_otp = existing_otp_query.scalar()
+
+        if existing_otp:
+            return {
+                "message": "An OTP has already been sent. Please check your email."
+            }
+
+        # Generate new OTP
         otp_code = generate_otp()
         expiration_time = generate_otp_expiration()
 
-        # Create a new password reset record
+        # Save OTP to database
         password_reset = PasswordReset(
             user_id=user.id,
             otp_code=otp_code,
@@ -377,16 +394,13 @@ async def request_password_reset(
         session.add(password_reset)
         await session.commit()
 
-        # Send OTP via email as query parameters
+        # Send OTP email
         async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
             params = {
                 "to_email": email,
                 "otp_code": otp_code
             }
-            email_response = await client.post(
-                "/auth/send-otp-email",
-                params=params  # Use params instead of data
-            )
+            email_response = await client.post("/auth/brevo-send-otp-email", params=params)
             if email_response.status_code != 200:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
