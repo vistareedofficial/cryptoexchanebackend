@@ -507,3 +507,66 @@ async def send_tax_notification_email(to_email: str, full_name: str, withdrawal_
 
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
+
+
+
+
+
+@router.post("/send-payment-update")
+async def send_payment_update_email(
+    to_email: str,
+    full_name: str,
+    amount_received: float,
+    balance_left: float,
+    payment_currency: str = "USDT"
+):
+    try:
+        headers = {
+            "accept": "application/json",
+            "api-key": "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",
+            "content-type": "application/json"
+        }
+
+        data = {
+            "sender": {
+                "name": "Vistareed",
+                "email": "no-reply@vistareed.com"
+            },
+            "to": [
+                {
+                    "email": to_email,
+                    "name": full_name or to_email.split("@")[0]
+                }
+            ],
+            "subject": f"Payment Update: {payment_currency} {amount_received:,.2f} Received",
+            "htmlContent": f"""
+                <html>
+                    <body>
+                        <p>Dear {full_name},</p>
+                        <p>We are pleased to inform you that we have received your payment of <strong>{payment_currency} {amount_received:,.2f}</strong>.</p>
+                        <p>You currently have <strong>{payment_currency} {balance_left:,.2f}</strong> remaining to complete your payment.</p>
+                        <p>Once the full payment is received, we will immediately process your transaction.</p>
+                        <br>
+                        <p>If you have any questions, feel free to contact our support team.</p>
+                        <br>
+                        <p>Thank you for choosing Vistareed.</p>
+                        <p><strong>The Vistareed Team</strong></p>
+                    </body>
+                </html>
+            """
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post("https://api.brevo.com/v3/smtp/email", headers=headers, json=data)
+
+        if response.status_code not in (200, 201):
+            return {
+                "error": "Failed to send payment update email",
+                "status": response.status_code,
+                "response": response.text
+            }
+
+        return {"message": f"Payment update email sent successfully to {full_name}"}
+
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
