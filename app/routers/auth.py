@@ -27,7 +27,7 @@ from app.enums import UserType
 from mailchimp_marketing import Client
 from mailchimp_marketing.api_client import ApiClientError
 import mailchimp_transactional as MailchimpTransactional
-
+from ..enums import UserStatusEnum
 
 
 logging.basicConfig(level=logging.INFO)
@@ -91,12 +91,27 @@ async def login_crypto_user(
             detail="Invalid phone number or password"
         )
 
+    # ✅ Check password
     if not verify_password(login_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid phone number or password"
         )
 
+    # ✅ Check if user is suspended or disabled
+    if user.user_status == UserStatusEnum.SUSPENDED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is suspended due to Region Restriction, Please contact support."
+        )
+
+    if user.user_status == UserStatusEnum.DISABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been disabled and cannot be accessed."
+        )
+
+    # ✅ Check if crypto user exists
     crypto_user = user.crypto_user
     if not crypto_user:
         raise HTTPException(
@@ -104,7 +119,7 @@ async def login_crypto_user(
             detail="CryptoUser not found"
         )
 
-    # ✅ Use user.id in access and refresh token
+    # ✅ Generate access and refresh tokens
     access_token = create_access_token(data={"sub": str(user.id)})
     refresh_token = await create_refresh_token(data={"sub": str(user.id)}, db=db)
 
@@ -121,7 +136,6 @@ async def login_crypto_user(
         "token_type": "bearer",
         "user_data": user_data
     }
-
 
 # Refresh Token Endpoint to get new Access Token
 @router.post("/refresh", response_model=RequestTokenResponse)

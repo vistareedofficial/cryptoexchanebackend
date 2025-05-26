@@ -26,6 +26,7 @@ from app.utils.security import hash_password
 from app.utils.coin_schema import  CryptoUserProfile, UserInfo
 from sqlalchemy.orm import joinedload
 import httpx
+from ..enums import UserStatusEnum
 from fastapi import HTTPException, Query
 
 router = APIRouter()
@@ -542,3 +543,54 @@ async def upload_temp_driver_photo(
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
     
 
+
+@router.patch("/user/{user_id}/suspend", status_code=status.HTTP_200_OK)
+async def suspend_user(user_id: int, db: AsyncSession = Depends(get_async_db)):
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.user_status = UserStatusEnum.SUSPENDED
+    await db.commit()
+    return {"message": f"User {user_id} suspended successfully"}
+
+
+@router.patch("/user/{user_id}/disable", status_code=status.HTTP_200_OK)
+async def disable_user(user_id: int, db: AsyncSession = Depends(get_async_db)):
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.user_status = UserStatusEnum.DISABLED
+    await db.commit()
+    return {"message": f"User {user_id} disabled (banned) successfully"}
+
+
+@router.patch("/user/{user_id}/disable", status_code=status.HTTP_200_OK)
+async def disable_user(user_id: int, db: AsyncSession = Depends(get_async_db)):
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.user_status = UserStatusEnum.DISABLED
+    await db.commit()
+    return {"message": f"User {user_id} disabled (banned) successfully"}
+
+
+@router.patch("/user/{user_id}/reactivate", status_code=status.HTTP_200_OK)
+async def reactivate_user(user_id: int, db: AsyncSession = Depends(get_async_db)):
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.user_status = UserStatusEnum.APPROVED
+    await db.commit()
+    return {"message": f"User {user_id} reactivated successfully"}
