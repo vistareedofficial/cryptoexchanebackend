@@ -594,3 +594,53 @@ async def reactivate_user(user_id: int, db: AsyncSession = Depends(get_async_db)
     user.user_status = UserStatusEnum.APPROVED
     await db.commit()
     return {"message": f"User {user_id} reactivated successfully"}
+
+
+
+# If router is not defined in this file, ensure it uses your existing APIRouter instance
+@router.get("/dev/registered-users/", status_code=status.HTTP_200_OK)
+async def get_user_registration_data(
+    email: Optional[str] = None,
+    phone_number: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Developer utility endpoint to fetch user registration profiles.
+    Allows filtering by email or phone_number. If no filters are passed, it returns all records.
+    """
+    async with db as session:
+        # 1. Start the base query selecting the User model
+        query = select(User)
+        
+        # 2. Apply filters dynamically if provided in the URL query string
+        if email:
+            query = query.filter(User.email == email)
+        if phone_number:
+            query = query.filter(User.phone_number == phone_number)
+            
+        result = await session.execute(query)
+        users = result.scalars().all()
+        
+        if not users:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="No registered user profiles found matching those parameters."
+            )
+            
+        # 3. Format the response payload safely (excluding security sensitive fields like hashed_password)
+        response_data = []
+        for user in users:
+            response_data.append({
+                "id": user.id,
+                "full_name": user.full_name,
+                "user_name": user.user_name,
+                "phone_number": user.phone_number,
+                "email": user.email,
+                "user_type": user.user_type,
+                "created_at": user.created_at
+            })
+            
+        return {
+            "total_records": len(response_data),
+            "users": response_data
+        }
