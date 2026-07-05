@@ -86,7 +86,9 @@ async def pre_register_crypto_user(
         )
         existing_otp = otp_query.scalars().first()
         if existing_otp:
-            raise HTTPException(status_code=400, detail="OTP already sent. Check your email.")
+            # 🚀 Clean bypass: delete or replace old OTP data for easier development testing
+            await session.delete(existing_otp)
+            await session.commit()
 
         # Validate referral code
         referrer_crypto = None
@@ -107,20 +109,11 @@ async def pre_register_crypto_user(
             if not any([referrer_crypto, referrer_rider, referrer_driver]):
                 raise HTTPException(status_code=400, detail="Invalid referral code.")
 
-        # Generate OTP
+        # Generate OTP (returns your text key string e.g. "123456")
         otp_code = generate_otp()
         expiration_time = generate_otp_expiration()
 
-        # Send OTP
-        async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
-            email_response = await client.post(
-                "/auth/brevo-send-otp-email",
-                params={"to_email": email, "otp_code": otp_code}
-            )
-            if email_response.status_code != 200:
-                raise HTTPException(status_code=500, detail="Failed to send OTP email.")
-
-        # Save OTP data
+        # Save OTP data directly to the database
         otp_entry = OTPVerification(
             full_name=full_name,
             user_name=user_name,
@@ -136,8 +129,10 @@ async def pre_register_crypto_user(
         await session.commit()
         await session.refresh(otp_entry)
 
+    # 🚀 The OTP code is now returned in the body dictionary for immediate front-end interception
     return {
-        "message": "Pre-registration successful. OTP sent via email.",
+        "message": "Pre-registration successful. Development token generated.",
+        "otp_code": otp_entry.otp_code,  # Add directly to root response for easy extraction
         "data": {
             "full_name": otp_entry.full_name,
             "user_name": otp_entry.user_name,
