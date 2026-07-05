@@ -9,14 +9,17 @@ import uuid
 from tronpy.keys import PrivateKey
 from cryptography.fernet import Fernet
 import os
+from dotenv import load_dotenv
 from .utils_dependencies_files import anext
 # ------------------- DEPOSIT -------------------
 
+load_dotenv()
 
 FERNET_SECRET_KEY = os.getenv("FERNET_SECRET_KEY")
+if not FERNET_SECRET_KEY:
+    raise ValueError("FERNET_SECRET_KEY is not set in environment variables")
 
-FERNET_KEY = FERNET_SECRET_KEY
-fernet = Fernet(FERNET_KEY)
+fernet = Fernet(FERNET_SECRET_KEY)
 
 # ------------------- UPDATE COIN PRICES -------------------
 

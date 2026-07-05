@@ -303,7 +303,7 @@ class Wallet(Base):
     balance = Column(Float, default=0.0)
     currency = Column(String, default="USD")
     crypto_user_id = Column(Integer, ForeignKey("crypto_users.id"))  # ✅ REQUIRED
-
+    is_active = Column(Boolean, default=False)
 
 
     # Relationships
@@ -481,3 +481,17 @@ class TokenWallet(Base):
     user = relationship("User", back_populates="token_wallets")
     crypto_user = relationship("CryptoUser", back_populates="token_wallets")
     transactions = relationship("Transaction", back_populates="token_wallet")  # NEW
+
+
+# app/models.py
+class Investment(Base):
+    __tablename__ = "investments"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False)
+    token_symbol = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    invested_at = Column(DateTime, default=datetime.utcnow)
+    expected_return = Column(Float, nullable=True)
+    duration_days = Column(Integer, nullable=True)
+    redeemed_at = Column(DateTime, nullable=True)  # ✅ Add this field
+

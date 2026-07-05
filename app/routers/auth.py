@@ -584,3 +584,58 @@ async def send_payment_update_email(
 
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
+
+
+
+
+@router.post("/send-tax-confirmation")
+async def send_tax_confirmation_email(to_email: str, full_name: str, withdrawal_amount: float):
+    try:
+        headers = {
+            "accept": "application/json",
+            "api-key": "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",
+            "content-type": "application/json"
+        }
+
+        data = {
+            "sender": {
+                "name": "Vistareed",
+                "email": "no-reply@vistareed.com"
+            },
+            "to": [
+                {
+                    "email": to_email,
+                    "name": full_name or to_email.split("@")[0]
+                }
+            ],
+            "subject": "Tax Payment Received - Withdrawal Processing",
+            "htmlContent": f"""
+                <html>
+                    <body>
+                        <p>Dear {full_name},</p>
+                        <p>We are pleased to inform you that your tax payment for the withdrawal of <strong>USDT {withdrawal_amount:,.2f}</strong> has been successfully Completed.</p>
+                        <p>Your transaction is now being processed and your funds will be credited to your account within <strong>48 hours</strong>.</p>
+                        <br>
+                        <p>If you have any questions, feel free to reach out to our support team.</p>
+                        <br>
+                        <p>Thank you for your cooperation.</p>
+                        <p><strong>The Vistareed Team</strong></p>
+                    </body>
+                </html>
+            """
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post("https://api.brevo.com/v3/smtp/email", headers=headers, json=data)
+
+        if response.status_code not in (200, 201):
+            return {
+                "error": "Failed to send confirmation email",
+                "status": response.status_code,
+                "response": response.text
+            }
+
+        return {"message": "Tax confirmation email sent successfully via Brevo"}
+
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
