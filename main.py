@@ -366,6 +366,9 @@ origins = [
     "http://127.0.0.1:3000",
     "https://www.vistareed.com",  # Your actual frontend domain on Vercel
     "https://vistareed.com",      # Without 'www' if users may access directly
+    "http://localhost:3000",        # Common local React port
+    "http://localhost:5173",        # Common local Vite port
+    "https://cryptowallentfrontend.onrender.com",
 ]
 
 app.add_middleware(
