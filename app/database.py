@@ -2,13 +2,16 @@ import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Local database connection string
-DATABASE_URL = "postgresql+asyncpg://postgres:eternity@localhost/Cryptowallet"
+# Read from environment variables in production, fallback to local string for development
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", 
+    "postgresql+asyncpg://postgres:eternity@localhost/Cryptowallet"
+)
 
 # Create the async SQLAlchemy engine
 async_engine = create_async_engine(
     DATABASE_URL,
-    echo=True,  # Set to False in production
+    echo=False,  # Set to False to keep production logs clean
     future=True
 )
 
